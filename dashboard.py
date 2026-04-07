@@ -1348,8 +1348,13 @@ import sys
 
 STOP_SIGNAL_PATH = ROOT / "artifacts" / "stop_signal"
 
+# Detect if running on Streamlit Cloud (no local camera/subprocess support)
+_IS_CLOUD = os.getenv("STREAMLIT_SHARING_MODE") or os.getenv("STREAMLIT_SERVER_HEADLESS") == "true" or not Path(sys.executable).exists()
+
 def _is_monitoring_running():
     """Check if monitoring subprocess is still alive."""
+    if _IS_CLOUD:
+        return False
     proc = st.session_state.get("monitor_process")
     if proc is None:
         return False
@@ -1363,28 +1368,31 @@ def _is_monitoring_running():
 ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([5, 2, 2, 1])
 
 with ctrl2:
-    monitoring_active = _is_monitoring_running()
-    if not monitoring_active:
-        if st.button("▶ Start Monitoring", use_container_width=True, type="primary"):
-            # Remove old stop signal if any
-            if STOP_SIGNAL_PATH.exists():
-                STOP_SIGNAL_PATH.unlink(missing_ok=True)
-            # Clear old frame
-            if LATEST_FRAME_PATH.exists():
-                LATEST_FRAME_PATH.unlink(missing_ok=True)
-            # Launch main.py --headless as a background subprocess
-            main_py = str(ROOT / "main.py")
-            proc = subprocess.Popen(
-                [sys.executable, main_py, "--headless"],
-                cwd=str(ROOT),
-            )
-            st.session_state["monitor_process"] = proc
-            st.rerun()
+    if _IS_CLOUD:
+        st.info("☁️ Cloud Mode — Run main.py locally")
     else:
-        st.success("● Monitoring Active")
+        monitoring_active = _is_monitoring_running()
+        if not monitoring_active:
+            if st.button("▶ Start Monitoring", use_container_width=True, type="primary"):
+                # Remove old stop signal if any
+                if STOP_SIGNAL_PATH.exists():
+                    STOP_SIGNAL_PATH.unlink(missing_ok=True)
+                # Clear old frame
+                if LATEST_FRAME_PATH.exists():
+                    LATEST_FRAME_PATH.unlink(missing_ok=True)
+                # Launch main.py --headless as a background subprocess
+                main_py = str(ROOT / "main.py")
+                proc = subprocess.Popen(
+                    [sys.executable, main_py, "--headless"],
+                    cwd=str(ROOT),
+                )
+                st.session_state["monitor_process"] = proc
+                st.rerun()
+        else:
+            st.success("● Monitoring Active")
 
 with ctrl3:
-    if _is_monitoring_running():
+    if not _IS_CLOUD and _is_monitoring_running():
         if st.button("■ Stop Monitoring", use_container_width=True):
             # Create stop signal file for main.py to pick up
             STOP_SIGNAL_PATH.touch()
@@ -1399,7 +1407,7 @@ with ctrl3:
 with ctrl4:
     if st.button("Logout", use_container_width=True):
         # Stop monitoring if running
-        if _is_monitoring_running():
+        if not _IS_CLOUD and _is_monitoring_running():
             STOP_SIGNAL_PATH.touch()
             proc = st.session_state.get("monitor_process")
             if proc and proc.poll() is None:
@@ -1408,6 +1416,7 @@ with ctrl4:
         st.session_state["logged_in"] = False
         st.session_state["entered_dashboard"] = False
         st.rerun()
+
 
 tab_overview, tab_incidents, tab_gallery, tab_analytics = st.tabs(["📺 Overview", "📊 Incidents", "🖼 Snapshots", "📈 Analytics"])
 
